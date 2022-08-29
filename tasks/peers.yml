@@ -40,7 +40,7 @@
     peer_public_key: "{{ public_key.stdout }}"
 
 - name: debug versão ansible
-  shell: ansible --version && pip --version
+  shell: pip3 install netaddr && ansible-galaxy collection install ansible.utils
   
 - name: Set IP Address fact.
   set_fact: 
