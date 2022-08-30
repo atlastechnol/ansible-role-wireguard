@@ -38,9 +38,6 @@
 - name: Set public key fact.
   set_fact:
     peer_public_key: "{{ public_key.stdout }}"
-
-- name: debug versão ansible
-  shell: ansible-galaxy collection install ansible.utils
   
 - name: Set IP Address fact.
   set_fact: 
