@@ -31,7 +31,9 @@
   tags:
     - wg-install
   when: not ansible_os_family == 'Darwin'
- 
+  become_user: root
+  become: true
+
 - name: Generate keys | Check wg syncconf subcommand status
   block:
     - name: Register if config/private key already exists on target host
@@ -55,7 +57,7 @@
   tags:
     - wg-generate-keys
     - wg-config
-
+  
 - name: WireGuard private key handling for new keys
   block:
     - name: Generate WireGuard private key
