@@ -69,7 +69,7 @@
 
     - name: Creation notification
       slack:
-        token: "${{ secrets.SLACK_TOKEN_TEST }}"
+        token: "{{ slack_token }}"
         username: "Staging Wireguard"
         icon_url: https://www.wireguard.com/img/icons/favicon-64.png
         channel: "@{{ item.name }}"
