@@ -164,6 +164,9 @@
     state: absent
   tags:
     - wg-config
+    
+- name: Debug user
+  command: whoami
 
 - name: Start and enable WireGuard service
   service:
