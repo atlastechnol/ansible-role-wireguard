@@ -184,8 +184,10 @@
   become: true
 
 # Função utilizada para reiniciar a Wireguard após a conclusão da criação dos users e ativa-los
-- name: Start and enable Wireguard service
-  command: systemctl restart wg-quick@wg0.service
+- name: Start and enable WireGuard service
+  shell: wg-quick down wg0; wg-quick up wg0
+  args:
+    executable: /bin/bash
   become_user: root
   become: true
 
