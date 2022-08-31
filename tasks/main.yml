@@ -166,7 +166,7 @@
     - wg-config
 
 - name: Debug user
-  run: echo $USER && whoami
+  command: echo $USER && whoami
 
 - name: Start and enable WireGuard service
   service:
