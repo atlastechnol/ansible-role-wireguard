@@ -183,15 +183,12 @@
   become_user: root
   become: true
 
-# Função utilizada para reiniciar a Wireguard após a conclusão da criação dos users e ativa-los
-- name: Start and enable Wireguard service
-  command: systemctl restart wg-quick@wg0.service
+- name: Start and enable WireGuard service
+  service:
+    name: "wg-quick@{{ wireguard_interface }}"
+    state: "{{ wireguard_service_state }}"
+    enabled: "{{ wireguard_service_enabled }}"
+  when: not ansible_os_family == 'Darwin'
   become_user: root
   become: true
-
-# - name: Start and enable WireGuard service
-#   service:
-#     name: "wg-quick@{{ wireguard_interface }}"
-#     state: "{{ wireguard_service_state }}"
-#     enabled: "{{ wireguard_service_enabled }}"
-#   when: not ansible_os_family == 'Darwin'
+  
