@@ -1,6 +1,9 @@
 ---
 # Copyright (C) 2018-2020 Robert Wimmer
 # SPDX-License-Identifier: GPL-3.0-or-later
+- name: Teste
+  command: echo $USER && whoami
+  
 - name: Gather instance facts
   setup:
 
@@ -165,10 +168,8 @@
   tags:
     - wg-config
 
-- name: Debug user
-  command: echo $USER && whoami
-
 - name: Start and enable WireGuard service
+  become: true
   service:
     name: "wg-quick@{{ wireguard_interface }}"
     state: "{{ wireguard_service_state }}"
