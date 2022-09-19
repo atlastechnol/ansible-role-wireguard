@@ -42,7 +42,9 @@
 - name: Set IP Address fact.
   set_fact: 
     peer_ip_address: "{{ wireguard_address | ipaddr(item.position + 1) | regex_replace('/(.*)', '/32')}}"
-
+  become: true
+  become_user: root
+  
 - name: Create {{ item.name }} peer configs.
   template:
     src: "etc/wireguard/clients/peer.conf.j2"
