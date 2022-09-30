@@ -41,7 +41,7 @@
   
 - name: Set IP Address fact.
   set_fact: 
-    peer_ip_address: "{{ wireguard_address | ansible.utils.ipaddr('peer + 1') | regex_replace('/(.*)', '/32')}}"
+    peer_ip_address: "{{ wireguard_address | ansible.utils.ipaddr(item.position + 1) | regex_replace('/(.*)', '/32')}}"
   
 - name: Create {{ item.name }} peer configs.
   template:
