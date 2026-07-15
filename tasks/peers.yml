@@ -1,54 +1,105 @@
+# Verifica se já existe um arquivo de configuração para o peer atual.
 - name: WireGuard condiguration exists
   stat:
     path: "{{ wireguard_remote_directory }}/clients/{{ item.name }}.conf"
   register: peer_config_file
 
-- name: WireGuard private key handling for existing keys
+# Calcula o endereço esperado pela posição atual e inicializa o controle de mudança.
+- name: Set IP Address fact.
+  set_fact:
+    peer_ip_address: "{{ wireguard_address | ansible.utils.ipaddr(item.position + 1) | regex_replace('/(.*)', '/32')}}"
+    peer_position_changed: false
+
+# Compara a posição atual do peer com o endereço registrado na configuração existente.
+- name: Check position for existing peer
   block:
+    # Lê a configuração existente para recuperar o endereço atualmente atribuído.
     - name: Read WireGuard config file
       slurp:
         src: "{{ wireguard_remote_directory }}/clients/{{ item.name }}.conf"
       register: register_config
 
-    - name: Set private key fact
+    # Marca o peer para rotação quando o endereço existente difere do endereço esperado.
+    - name: Check if peer position changed
       set_fact:
-        peer_private_key: "{{ register_config['content'] | b64decode | regex_findall('PrivateKey = (.*)') | first }}"
+        peer_position_changed: >-
+          {{
+            (
+              register_config['content']
+              | b64decode
+              | regex_findall('(?m)^Address\\s*=\\s*(\\S+)')
+              | first
+              | default('')
+            )
+            != peer_ip_address
+          }}
   when:
     - peer_config_file.stat.exists
 
-- name: WireGuard private key handling for not existing keys
+# Preserva a configuração anterior somente quando o peer foi movido de posição.
+- name: Backup config for peer moved to another position
   block:
+    # Garante a existência da pasta protegida onde as configurações antigas serão armazenadas.
+    - name: Create WireGuard clients backup directory
+      file:
+        dest: "{{ wireguard_remote_directory }}/clients/backup"
+        state: directory
+        mode: 0700
+
+    # Move a configuração anterior para o backup com timestamp e nome original.
+    - name: Move previous peer config to backup directory
+      command:
+        argv:
+          - mv
+          - "{{ wireguard_remote_directory }}/clients/{{ item.name }}.conf"
+          - "{{ wireguard_remote_directory }}/clients/backup/{{ ansible_date_time.year }}_{{ ansible_date_time.month }}_{{ ansible_date_time.day }}_{{ ansible_date_time.hour }}_{{ ansible_date_time.minute }}_{{ ansible_date_time.second }}_{{ item.name }}.conf"
+  when:
+    - peer_position_changed | bool
+
+# Reutiliza a chave privada somente quando o peer permanece na mesma posição.
+- name: WireGuard private key handling for existing keys
+  set_fact:
+    peer_private_key: "{{ register_config['content'] | b64decode | regex_findall('PrivateKey = (.*)') | first }}"
+  when:
+    - peer_config_file.stat.exists
+    - not peer_position_changed | bool
+
+# Gera uma nova chave privada para peers novos ou movidos de posição.
+- name: WireGuard private key handling for new or rotated keys
+  block:
+    # Executa o WireGuard para criar uma nova chave privada.
     - name: Generate WireGuard private key to {{ item.name }} peer.
       command: "wg genkey"
       register: private_key
       changed_when: false
 
+    # Armazena a nova chave privada para uso na geração da configuração.
     - name: Set private key fact
       set_fact:
         peer_private_key: "{{ private_key.stdout }}"
   when:
-    - not peer_config_file.stat.exists
+    - not peer_config_file.stat.exists or peer_position_changed | bool
 
+# Deriva a chave pública correspondente à chave privada selecionada ou recém-gerada.
 - name: Generate WireGuard public key to {{ item.name }} peer.
   command: "wg pubkey"
   args:
     stdin: "{{ peer_private_key }}"
   register: public_key
 
+# Armazena a chave pública para compor a configuração do servidor.
 - name: Set public key fact.
   set_fact:
     peer_public_key: "{{ public_key.stdout }}"
   
-- name: Set IP Address fact.
-  set_fact: 
-    peer_ip_address: "{{ wireguard_address | ansible.utils.ipaddr(item.position + 1) | regex_replace('/(.*)', '/32')}}"
-  
+# Renderiza o arquivo de configuração atualizado do peer.
 - name: Create {{ item.name }} peer configs.
   template:
     src: "etc/wireguard/clients/peer.conf.j2"
     dest: "{{ wireguard_remote_directory }}/clients/{{ item.name }}.conf"
     mode: 0644
   
+# Monta a estrutura do peer com nome, endereço e chave pública.
 - name: Set peer configuration.
   set_fact: 
     wg_peer: 
@@ -56,18 +107,22 @@
       ip: "{{ peer_ip_address }}"
       publickey: "{{ peer_public_key }}"
 
+# Adiciona o peer atual à lista usada para gerar a configuração do servidor.
 - name: Concat all peers.
   set_fact: 
     wg_peers: "{{ wg_peers + [wg_peer] }}"
 
+# Envia a configuração ao usuário somente em criações ou rotações de chave.
 - name: Slack notify
   block:
+    # Lê o arquivo recém-gerado para incluí-lo na mensagem ao usuário.
     - name: Read WireGuard config file
       slurp:
         src: "{{ wireguard_remote_directory }}/clients/{{ item.name }}.conf"
       register: register_config
 
-    - name: Creation notification
+    # Notifica o usuário pelo Slack com a configuração nova ou rotacionada.
+    - name: Creation or rotation notification
       slack:
         token: "{{ slack_token }}"
         username: "Staging Wireguard"
@@ -79,4 +134,4 @@
           ```{{ register_config['content'] | b64decode }}```
           > OBS.: Você deve importar para dentro do seu client este aquivo!
   when:
-    - not peer_config_file.stat.exists
+    - not peer_config_file.stat.exists or peer_position_changed | bool
