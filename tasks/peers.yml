@@ -1,30 +1,7 @@
-- name: Ensure the disabled clients directory exists
-  ansible.builtin.file:
-    path: /etc/wireguard/clients_disabled
-    state: directory
-    mode: '0700'
+- name: Set IP Address fact.
+  set_fact:
+    peer_ip_address: "{{ wireguard_address | ansible.utils.ipaddr(item.position + 1) | regex_replace('/(.*)', '/32')}}"
 
-- name: List all client configuration files in the directory
-  ansible.builtin.find:
-    paths: /etc/wireguard/clients
-    patterns: "*.conf"
-  register: clients_exists
-
-- name: Move orphan files to the disabled folder
-  ansible.builtin.command:
-    cmd: mv "{{ item.path }}" /etc/wireguard/clients_disabled/
-  args:
-    # Ensures the command only runs if the original file is still in the folder
-    removes: "{{ item.path }}"
-  loop: "{{ clients_exists.files }}"
-  vars:
-    # Creates a list with only the names of the currently active users
-    peers_enable: "{{ wireguard_peers | map(attribute='name') | list }}"
-    # Gets the found file name (e.g., 'joao.conf') and removes '.conf' to compare
-    file_name: "{{ item.path | basename | replace('.conf', '') }}"
-  # The move action only happens if the user is not in the list sent by n8n
-  when: file_name not in peers_enable
-  
 - name: WireGuard condiguration exists
   stat:
     path: "{{ wireguard_remote_directory }}/clients/{{ item.name }}.conf"
@@ -37,9 +14,11 @@
         src: "{{ wireguard_remote_directory }}/clients/{{ item.name }}.conf"
       register: register_config
 
-    - name: Set private key fact
+    - name: Set existing peer facts
       set_fact:
         peer_private_key: "{{ register_config['content'] | b64decode | regex_findall('PrivateKey = (.*)') | first }}"
+        peer_public_key: "{{ register_config['content'] | b64decode | regex_findall('(?m)^# - PublicKey: (.*)$') | first }}"
+        peer_config_needs_update: "{{ (register_config['content'] | b64decode | regex_findall('(?m)^Address = (.*)$') | first) != peer_ip_address }}"
   when:
     - peer_config_file.stat.exists
 
@@ -53,6 +32,7 @@
     - name: Set private key fact
       set_fact:
         peer_private_key: "{{ private_key.stdout }}"
+        peer_config_needs_update: true
   when:
     - not peer_config_file.stat.exists
 
@@ -61,20 +41,22 @@
   args:
     stdin: "{{ peer_private_key }}"
   register: public_key
+  when:
+    - not peer_config_file.stat.exists
 
 - name: Set public key fact.
   set_fact:
     peer_public_key: "{{ public_key.stdout }}"
-  
-- name: Set IP Address fact.
-  set_fact: 
-    peer_ip_address: "{{ wireguard_address | ansible.utils.ipaddr(item.position + 1) | regex_replace('/(.*)', '/32')}}"
+  when:
+    - not peer_config_file.stat.exists
   
 - name: Create {{ item.name }} peer configs.
   template:
     src: "etc/wireguard/clients/peer.conf.j2"
     dest: "{{ wireguard_remote_directory }}/clients/{{ item.name }}.conf"
     mode: 0644
+  when:
+    - peer_config_needs_update | bool
   
 - name: Set peer configuration.
   set_fact: 

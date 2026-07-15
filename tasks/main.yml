@@ -136,6 +136,33 @@
         state: directory
         mode: 0700
 
+    - name: Ensure the disabled clients directory exists
+      ansible.builtin.file:
+        path: /etc/wireguard/clients_disabled
+        state: directory
+        mode: '0700'
+
+    - name: List all client configuration files in the directory
+      ansible.builtin.find:
+        paths: /etc/wireguard/clients
+        patterns: "*.conf"
+      register: clients_exists
+
+    - name: Move orphan files to the disabled folder
+      ansible.builtin.command:
+        cmd: mv "{{ item.path }}" /etc/wireguard/clients_disabled/
+      args:
+        # Ensures the command only runs if the original file is still in the folder
+        removes: "{{ item.path }}"
+      loop: "{{ clients_exists.files }}"
+      vars:
+        # Creates a list with only the names of the currently active users
+        peers_enable: "{{ wireguard_peers | map(attribute='name') | list }}"
+        # Gets the found file name (e.g., 'joao.conf') and removes '.conf' to compare
+        file_name: "{{ item.path | basename | replace('.conf', '') }}"
+      # The move action only happens if the user is not in the list sent by n8n
+      when: file_name not in peers_enable
+
     - name: Set wireguard public ip.
       set_fact: 
         wireguard_public_ip: "{{ peer__register_wg_public_ip.content }}"
